@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Benzinpreise Deutschland</title>
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0f1117" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Benzinpreise" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --card2: #22263a;
+      --border: #2e3250;
+      --accent: #4f8ef7;
+      --accent2: #6c63ff;
+      --green: #22c55e;
+      --orange: #f59e0b;
+      --red: #ef4444;
+      --text: #e8eaf6;
+      --muted: #7b82a8;
+      --radius: 14px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      padding: 0;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1a1d27 0%, #22263a 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    header .logo {
+      font-size: 2rem;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    header p {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 20px;
+    }
+
+    /* ── API Key Banner ─────────────────────────────────── */
+    .api-banner {
+      background: linear-gradient(135deg, #1e2a3a, #1a2236);
+      border: 1px solid #2e4a6a;
+      border-radius: var(--radius);
+      padding: 18px 22px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    .api-banner .icon { font-size: 1.5rem; flex-shrink: 0; margin-top: 2px; }
+
+    .api-banner h3 { font-size: 0.95rem; font-weight: 600; color: #93c5fd; margin-bottom: 4px; }
+
+    .api-banner p  { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+
+    .api-banner a  { color: #60a5fa; text-underline-offset: 3px; }
+
+    .api-key-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      align-items: center;
+    }
+
+    .api-key-row input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 14px;
+      color: var(--text);
+      font-size: 0.85rem;
+      font-family: monospace;
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    .api-key-row input:focus { border-color: var(--accent); }
+
+    .api-key-row input.valid   { border-color: var(--green); }
+    .api-key-row input.invalid { border-color: var(--red); }
+
+    /* ── Search Card ────────────────────────────────────── */
+    .search-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .search-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 14px;
+      align-items: end;
+    }
+
+    @media (max-width: 680px) {
+      .search-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .field input, .field select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    .field input:focus, .field select:focus { border-color: var(--accent); }
+
+    .field select { cursor: pointer; }
+
+    .field select option { background: var(--card); }
+
+    /* Radius slider */
+    .range-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .range-wrap input[type=range] {
+      flex: 1;
+      -webkit-appearance: none;
+      height: 4px;
+      border-radius: 4px;
+      background: var(--border);
+      border: none;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .range-wrap input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    .range-val {
+      min-width: 46px;
+      text-align: right;
+      font-weight: 700;
+      color: var(--accent);
+      font-size: 0.9rem;
+    }
+
+    /* ── Search Button ──────────────────────────────────── */
+    .btn-search {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 26px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s, transform .1s;
+      white-space: nowrap;
+      height: 44px;
+    }
+
+    .btn-search:hover:not(:disabled) { opacity: .88; }
+    .btn-search:active:not(:disabled) { transform: scale(.97); }
+    .btn-search:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Status / Error ─────────────────────────────────── */
+    .status-box {
+      display: none;
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 0.88rem;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-box.show { display: flex; }
+
+    .status-box.info    { background: #1a2a3a; border: 1px solid #2e4a6a; color: #93c5fd; }
+    .status-box.error   { background: #2a1a1a; border: 1px solid #6a2e2e; color: #fca5a5; }
+    .status-box.loading { background: #1a2a3a; border: 1px solid #2e4a6a; color: #93c5fd; }
+
+    /* ── Summary Bar ─────────────────────────────────────── */
+    .summary {
+      display: none;
+      gap: 14px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .summary.show { display: flex; }
+
+    .summary-pill {
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: 50px;
+      padding: 6px 16px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .summary-pill strong { color: var(--text); }
+
+    /* ── Fuel Tab Bar & Filter Bar ──────────────────────── */
+    .tab-bar, .filter-bar {
+      display: none;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .tab-bar.show { display: flex; }
+    .filter-bar.show { display: flex; }
+
+    .filter-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-right: 2px;
+    }
+
+    .tab {
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 18px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .tab.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* ── Map ─────────────────────────────────────────────── */
+    #mapContainer {
+      display: none;
+      margin-bottom: 20px;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    #mapContainer.show { display: block; }
+
+    #map { height: 420px; }
+
+    .leaflet-popup-content-wrapper {
+      border-radius: 10px !important;
+      box-shadow: 0 4px 16px rgba(0,0,0,.35) !important;
+    }
+
+    .leaflet-popup-content { font-size: 13px; line-height: 1.6; }
+
+    /* ── Results Table ───────────────────────────────────── */
+    .table-wrap {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    thead tr {
+      background: var(--card2);
+    }
+
+    th {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    th:hover { color: var(--text); }
+
+    th .sort-icon { margin-left: 4px; opacity: .5; }
+    th.sorted .sort-icon { opacity: 1; color: var(--accent); }
+
+    td {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tr:hover td { background: rgba(79,142,247,.04); }
+
+    .price-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .price-badge.best   { background: rgba(34,197,94,.15);  color: var(--green);  }
+    .price-badge.mid    { background: rgba(245,158,11,.12); color: var(--orange); }
+    .price-badge.worst  { background: rgba(239,68,68,.12);  color: var(--red);    }
+
+    .open-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+
+    .open-dot.open   { background: var(--green); }
+    .open-dot.closed { background: var(--red); }
+
+    .station-name { font-weight: 600; }
+    .station-addr { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+    .dist-val { color: var(--muted); font-size: 0.85rem; }
+
+    /* ── Spinner ─────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(147,197,253,.3);
+      border-top-color: #93c5fd;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Footer ──────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 24px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      margin-top: 40px;
+    }
+
+    footer a { color: var(--muted); }
+
+    /* ── Empty State ─────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+
+    .empty-state .big { font-size: 3rem; margin-bottom: 12px; }
+    .empty-state p { font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⛽</div>
+  <div>
+    <h1>Benzinpreise Deutschland</h1>
+    <p>Aktuelle Kraftstoffpreise im Umkreis · Daten via Tankerkönig / MTS-K</p>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- API Key Banner -->
+  <div class="api-banner" id="apiBanner">
+    <div class="icon">🔑</div>
+    <div style="flex:1">
+      <h3>Kostenlosen API-Key eingeben</h3>
+      <p>
+        Die App nutzt die offizielle <strong>Tankerkönig-API</strong> (Markttransparenzstelle für Kraftstoffe).<br>
+        Den kostenlosen Key bekommst du hier in ~1 Minute:
+        <a href="https://creativecommons.tankerkoenig.de/" target="_blank">creativecommons.tankerkoenig.de</a>
+        → „Daten beziehen" → E-Mail eingeben → Key per Mail erhalten.
+      </p>
+      <div class="api-key-row">
+        <input type="text" id="apiKeyInput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" spellcheck="false" />
+        <button class="btn-search" onclick="saveKey()">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search Card -->
+  <div class="search-card">
+    <div class="search-grid">
+      <div class="field">
+        <label>Postleitzahl</label>
+        <input type="text" id="plzInput" placeholder="z.B. 80333" maxlength="5" inputmode="numeric" value="31737" />
+      </div>
+      <div class="field">
+        <label>Umkreis</label>
+        <div class="range-wrap">
+          <input type="range" id="radiusSlider" min="1" max="25" value="10" oninput="updateRadius(this.value)" />
+          <span class="range-val" id="radiusVal">10 km</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Kraftstoff</label>
+        <select id="fuelSelect">
+          <option value="all">Alle (E5, E10, Diesel)</option>
+          <option value="e5">Super E5</option>
+          <option value="e10">Super E10</option>
+          <option value="diesel">Diesel</option>
+        </select>
+      </div>
+      <div>
+        <button class="btn-search" id="searchBtn" onclick="search()">🔍 Suchen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="status-box" id="statusBox">
+    <span class="spinner" id="statusSpinner" style="display:none"></span>
+    <span id="statusText"></span>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary" id="summary"></div>
+
+  <!-- Tab Bar -->
+  <div class="tab-bar" id="tabBar"></div>
+
+  <!-- Filter Bar -->
+  <div class="filter-bar" id="filterBar">
+    <span class="filter-label">Anzeigen:</span>
+    <button class="tab active" id="filterAll"    onclick="setFilter('all')">Alle</button>
+    <button class="tab"        id="filterOpen"   onclick="setFilter('open')">✅ Geöffnet</button>
+    <button class="tab"        id="filterClosed" onclick="setFilter('closed')">❌ Geschlossen</button>
+    <span style="flex:1"></span>
+    <button class="tab" id="mapToggle" onclick="toggleMap()">🗺️ Karte anzeigen</button>
+  </div>
+
+  <!-- Map -->
+  <div id="mapContainer"><div id="map"></div></div>
+
+  <!-- Results -->
+  <div id="results">
+    <div class="empty-state">
+      <div class="big">🗺️</div>
+      <p>Gib eine Postleitzahl ein und klicke auf „Suchen".</p>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  Preisdaten: <a href="https://creativecommons.tankerkoenig.de/" target="_blank">Tankerkönig</a> (MTS-K · BNetzA) ·
+  Geocoding: <a href="https://nominatim.openstreetmap.org/" target="_blank">OpenStreetMap Nominatim</a> ·
+  Alle Preise in €/Liter inkl. MwSt.
+</footer>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let apiKey = localStorage.getItem('tk_apikey') || '';
+let allStations = [];       // raw API response
+let currentFuel = 'e5';
+let sortKey = 'price';
+let sortAsc = true;
+let statusFilter = 'all';  // 'all' | 'open' | 'closed'
+let leafletMap   = null;
+let mapMarkers   = [];
+let markerById   = {};   // station.id → Leaflet-Marker
+let mapVisible   = false;
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  if (apiKey) {
+    document.getElementById('apiKeyInput').value = apiKey;
+    document.getElementById('apiKeyInput').classList.add('valid');
+    document.getElementById('apiBanner').style.display = 'none';
+  }
+  document.getElementById('plzInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') search();
+  });
+});
+
+// ─── API Key ─────────────────────────────────────────────────────────────────
+function saveKey() {
+  const val = document.getElementById('apiKeyInput').value.trim();
+  if (!val) return;
+  apiKey = val;
+  localStorage.setItem('tk_apikey', val);
+  document.getElementById('apiKeyInput').classList.add('valid');
+  document.getElementById('apiBanner').style.display = 'none';
+  showStatus('info', '✅ API-Key gespeichert.');
+  setTimeout(clearStatus, 2500);
+}
+
+// ─── Radius Slider ───────────────────────────────────────────────────────────
+function updateRadius(v) {
+  document.getElementById('radiusVal').textContent = v + ' km';
+}
+
+// ─── Geocode PLZ → {lat, lng} via Nominatim ──────────────────────────────────
+async function geocodePLZ(plz) {
+  const params = `postalcode=${encodeURIComponent(plz)}&country=DE&format=json&limit=1`;
+  const url = `https://nominatim.openstreetmap.org/search?${params}`;
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (!data.length) throw new Error(`Keine Koordinaten für PLZ ${plz} gefunden.`);
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), name: data[0].display_name };
+}
+
+// ─── Tankerkönig API ──────────────────────────────────────────────────────────
+async function fetchPrices(lat, lng, rad, type) {
+  const sort = type === 'all' ? 'dist' : 'price';
+  const url = `https://creativecommons.tankerkoenig.de/json/list.php` +
+    `?lat=${lat}&lng=${lng}&rad=${rad}&sort=${sort}&type=${type}&apikey=${apiKey}`;
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.message || 'API-Fehler');
+  return data.stations || [];
+}
+
+// ─── Main Search ──────────────────────────────────────────────────────────────
+async function search() {
+  if (!apiKey) {
+    showStatus('error', '⚠️ Bitte zuerst einen API-Key eingeben (siehe oben).');
+    document.getElementById('apiBanner').style.display = 'flex';
+    return;
+  }
+  const plz = document.getElementById('plzInput').value.trim();
+  if (!/^\d{5}$/.test(plz)) {
+    showStatus('error', '⚠️ Bitte eine gültige 5-stellige Postleitzahl eingeben.');
+    return;
+  }
+
+  const rad  = parseInt(document.getElementById('radiusSlider').value);
+  const type = document.getElementById('fuelSelect').value;
+
+  document.getElementById('searchBtn').disabled = true;
+  showStatus('loading', `Suche Tankstellen im Umkreis von ${rad} km um PLZ ${plz}…`, true);
+  hideResults();
+
+  try {
+    const geo = await geocodePLZ(plz);
+    showStatus('loading', `Koordinaten gefunden (${geo.lat.toFixed(4)}, ${geo.lng.toFixed(4)}) · Lade Preise…`, true);
+
+    const stations = await fetchPrices(geo.lat, geo.lng, rad, type);
+    allStations = stations;
+
+    if (!stations.length) {
+      showStatus('info', `ℹ️ Keine Tankstellen im ${rad}-km-Umkreis um PLZ ${plz} gefunden.`);
+      return;
+    }
+
+    clearStatus();
+    renderTabs(type);
+    renderSummary(stations, plz, rad, geo);
+    renderTable(stations, type === 'all' ? 'e5' : type);
+
+  } catch (err) {
+    showStatus('error', '❌ Fehler: ' + err.message);
+  } finally {
+    document.getElementById('searchBtn').disabled = false;
+  }
+}
+
+// ─── Render Tabs ──────────────────────────────────────────────────────────────
+function renderTabs(type) {
+  const bar   = document.getElementById('tabBar');
+  const fuels = type === 'all'
+    ? [['e5','Super E5'],['e10','Super E10'],['diesel','Diesel']]
+    : [[type, type === 'e5' ? 'Super E5' : type === 'e10' ? 'Super E10' : 'Diesel']];
+
+  currentFuel = fuels[0][0];
+  bar.innerHTML = fuels.map(([k,l]) =>
+    `<button class="tab ${k===currentFuel?'active':''}" onclick="switchFuel('${k}')">${l}</button>`
+  ).join('');
+  bar.classList.add('show');
+}
+
+function switchFuel(fuel) {
+  currentFuel = fuel;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase().includes(fuel)));
+  renderTable(allStations, fuel);
+}
+
+// ─── Render Summary ───────────────────────────────────────────────────────────
+function renderSummary(stations, plz, rad, geo) {
+  const open   = stations.filter(s => s.isOpen).length;
+  const closed = stations.length - open;
+  const loc    = geo.name.split(',').slice(0,2).join(',');
+
+  document.getElementById('summary').innerHTML =
+    `<div class="summary-pill">📍 <strong>${loc}</strong></div>
+     <div class="summary-pill">🔍 Umkreis <strong>${rad} km</strong></div>
+     <div class="summary-pill">⛽ <strong>${stations.length}</strong> Tankstellen</div>
+     <div class="summary-pill" style="color:var(--green)">✅ <strong>${open}</strong> geöffnet</div>
+     ${closed ? `<div class="summary-pill" style="color:var(--red)">❌ <strong>${closed}</strong> geschlossen</div>` : ''}`;
+  document.getElementById('summary').classList.add('show');
+}
+
+// ─── Render Table ─────────────────────────────────────────────────────────────
+let _currentFuel = 'e5';
+let _currentRows = [];
+
+function renderTable(stations, fuel) {
+  sortKey = 'price';
+  sortAsc = true;
+  statusFilter = 'all';
+  _currentFuel = fuel;
+
+  _currentRows = stations
+    .map(s => ({ ...s, _price: s[fuel] }))
+    .filter(s => s._price && s._price > 0);
+
+  // Reset filter buttons
+  ['filterAll','filterOpen','filterClosed'].forEach(id => {
+    document.getElementById(id).classList.remove('active');
+  });
+  document.getElementById('filterAll').classList.add('active');
+  document.getElementById('filterBar').classList.add('show');
+
+  if (!_currentRows.length) {
+    document.getElementById('results').innerHTML =
+      `<div class="empty-state"><div class="big">🚫</div><p>Keine Preise für diesen Kraftstoff verfügbar.</p></div>`;
+    return;
+  }
+
+  renderSortedTable();
+}
+
+function setFilter(val) {
+  statusFilter = val;
+  document.getElementById('filterAll').classList.toggle('active',    val === 'all');
+  document.getElementById('filterOpen').classList.toggle('active',   val === 'open');
+  document.getElementById('filterClosed').classList.toggle('active', val === 'closed');
+  renderSortedTable();
+}
+
+// ─── Map ──────────────────────────────────────────────────────────────────────
+function toggleMap() {
+  mapVisible = !mapVisible;
+  const btn = document.getElementById('mapToggle');
+  const container = document.getElementById('mapContainer');
+  btn.textContent = mapVisible ? '🗺️ Karte ausblenden' : '🗺️ Karte anzeigen';
+  btn.classList.toggle('active', mapVisible);
+  container.classList.toggle('show', mapVisible);
+
+  if (mapVisible) {
+    if (!leafletMap) {
+      leafletMap = L.map('map');
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      }).addTo(leafletMap);
+    }
+    leafletMap.invalidateSize();
+    updateMapMarkers();
+  }
+}
+
+function updateMapMarkers() {
+  if (!leafletMap || !mapVisible) return;
+
+  mapMarkers.forEach(m => leafletMap.removeLayer(m));
+  mapMarkers = [];
+  markerById = {};
+
+  const filtered = statusFilter === 'all'  ? _currentRows
+    : statusFilter === 'open'  ? _currentRows.filter(s =>  s.isOpen)
+    :                            _currentRows.filter(s => !s.isOpen);
+
+  if (!filtered.length) return;
+
+  const prices = filtered.map(r => r._price).filter(Boolean);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 0.01;
+  const bounds = [];
+
+  filtered.forEach(s => {
+    if (!s.lat || !s.lng) return;
+
+    const pct   = (s._price - min) / range;
+    const color = pct < 0.25 ? '#22c55e' : pct > 0.75 ? '#ef4444' : '#f59e0b';
+    const addr  = [s.street, s.houseNumber, s.place].filter(Boolean).join(' ');
+    const gMaps = `https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lng}`;
+    const oMaps = `https://www.openstreetmap.org/?mlat=${s.lat}&mlon=${s.lng}&zoom=16`;
+
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="background:${color};color:#fff;border-radius:6px;padding:3px 8px;
+               font-size:11px;font-weight:700;white-space:nowrap;
+               box-shadow:0 2px 6px rgba(0,0,0,.45);border:1.5px solid rgba(255,255,255,.3)">
+               ${s._price.toFixed(3).replace('.',',')}€</div>`,
+      iconAnchor: [0, 10]
+    });
+
+    const fuelLabels = { e5: 'Super E5', e10: 'Super E10', diesel: 'Diesel' };
+    const fuelColors = { e5: '#60a5fa', e10: '#a78bfa', diesel: '#34d399' };
+    const fuelRows = ['e5', 'e10', 'diesel']
+      .filter(f => s[f] && s[f] > 0)
+      .map(f => {
+        const isCurrent = f === _currentFuel;
+        const fp = (s[f] - min) / range;
+        const fc = fp < 0.25 ? '#22c55e' : fp > 0.75 ? '#ef4444' : '#f59e0b';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;
+                     gap:20px;padding:3px 0;${isCurrent ? 'font-weight:700' : ''}">
+                  <span style="color:#555;font-size:12px">${fuelLabels[f]}</span>
+                  <span style="color:${isCurrent ? fc : '#888'};font-size:${isCurrent?'1.05em':'0.95em'}">
+                    ${s[f].toFixed(3).replace('.',',')} €
+                    ${isCurrent ? '<span style="font-size:10px;margin-left:3px">◀</span>' : ''}
+                  </span>
+                </div>`;
+      }).join('');
+
+    const popup = `
+      <div style="min-width:210px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          ${getBrandLogo(s.brand||s.name, 24)}
+          <span style="font-weight:700;font-size:14px">${s.brand || s.name || '–'}</span>
+        </div>
+        <div style="color:#666;font-size:12px;margin-bottom:8px">${addr}</div>
+        <div style="border-top:1px solid #eee;border-bottom:1px solid #eee;padding:6px 0;margin-bottom:8px">
+          ${fuelRows}
+        </div>
+        <div style="font-size:12px;margin-bottom:8px;display:flex;gap:12px">
+          <span>${s.dist ? s.dist.toFixed(1)+' km' : '–'}</span>
+          <span style="color:${s.isOpen?'#16a34a':'#dc2626'}">${s.isOpen ? '✅ Geöffnet' : '❌ Geschlossen'}</span>
+        </div>
+        <div style="display:flex;gap:8px;font-size:12px">
+          <a href="${gMaps}" target="_blank" style="color:#4f8ef7;text-decoration:none">📍 Google Maps</a>
+          <a href="${oMaps}" target="_blank" style="color:#4f8ef7;text-decoration:none">🗺️ OpenStreetMap</a>
+        </div>
+      </div>`;
+
+    const marker = L.marker([s.lat, s.lng], { icon })
+      .bindPopup(popup)
+      .addTo(leafletMap);
+    mapMarkers.push(marker);
+    if (s.id) markerById[s.id] = marker;
+    bounds.push([s.lat, s.lng]);
+  });
+
+  if (bounds.length) leafletMap.fitBounds(bounds, { padding: [40, 40] });
+}
+
+function showOnMap(stationId) {
+  // Karte einblenden falls noch nicht sichtbar
+  if (!mapVisible) toggleMap();
+
+  // Kurz warten bis Karte gerendert, dann Marker anspringen
+  setTimeout(() => {
+    const marker = markerById[stationId];
+    if (!marker) return;
+    leafletMap.invalidateSize();
+    leafletMap.flyTo(marker.getLatLng(), 15, { duration: 0.8 });
+    marker.openPopup();
+    // Karte ins Sichtfeld scrollen
+    document.getElementById('mapContainer').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, mapVisible ? 0 : 400);
+}
+
+function sortBy(key) {
+  if (sortKey === key) {
+    sortAsc = !sortAsc;
+  } else {
+    sortKey = key;
+    sortAsc = (key === 'price' || key === 'dist'); // default asc for numeric
+  }
+  renderSortedTable();
+}
+
+function renderSortedTable() {
+  const filtered = statusFilter === 'all'    ? _currentRows
+                 : statusFilter === 'open'   ? _currentRows.filter(s =>  s.isOpen)
+                 :                             _currentRows.filter(s => !s.isOpen);
+
+  if (!filtered.length) {
+    const msg = statusFilter === 'open'
+      ? 'Keine geöffneten Tankstellen gefunden.'
+      : 'Keine geschlossenen Tankstellen gefunden.';
+    document.getElementById('results').innerHTML =
+      `<div class="empty-state"><div class="big">🔍</div><p>${msg}</p></div>`;
+    return;
+  }
+
+  const rows = [...filtered].sort((a, b) => {
+    let va, vb;
+    if (sortKey === 'price')  { va = a._price || 0;  vb = b._price || 0; }
+    else if (sortKey === 'dist')   { va = a.dist   || 999; vb = b.dist   || 999; }
+    else if (sortKey === 'name')   { va = (a.brand||a.name||'').toLowerCase(); vb = (b.brand||b.name||'').toLowerCase(); }
+    else if (sortKey === 'status') { va = a.isOpen ? 0 : 1; vb = b.isOpen ? 0 : 1; }
+    if (va < vb) return sortAsc ? -1 : 1;
+    if (va > vb) return sortAsc ?  1 : -1;
+    return 0;
+  });
+
+  // Preisfarben immer relativ zum günstigsten/teuersten
+  const prices = rows.map(r => r._price).filter(Boolean);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 0.01;
+
+  const arrow = (key) => {
+    if (sortKey !== key) return '<span class="sort-icon">↕</span>';
+    return `<span class="sort-icon" style="color:var(--accent)">${sortAsc ? '↑' : '↓'}</span>`;
+  };
+
+  const tbody = rows.map(s => {
+    const pct      = (s._price - min) / range;
+    const cls      = pct < 0.25 ? 'best' : pct > 0.75 ? 'worst' : 'mid';
+    const priceStr = s._price.toFixed(3).replace('.',',') + ' €';
+    const dist     = s.dist ? s.dist.toFixed(1) + ' km' : '–';
+    const addr     = [s.street, s.houseNumber, s.place].filter(Boolean).join(' ');
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:flex-start;gap:9px">
+          ${getBrandLogo(s.brand||s.name, 28)}
+          <div>
+            <div><span class="open-dot ${s.isOpen?'open':'closed'}"></span><span class="station-name" onclick="showOnMap('${s.id}')" title="Auf Karte anzeigen" style="cursor:pointer;text-decoration-line:underline;text-decoration-style:dotted;text-underline-offset:3px">${esc(s.brand||s.name||'–')}</span></div>
+            <div class="station-addr">${esc(s.name !== s.brand ? s.name||'' : '')} ${esc(addr)}</div>
+          </div>
+        </div>
+      </td>
+      <td><span class="price-badge ${cls}">${priceStr}</span></td>
+      <td class="dist-val">${dist}</td>
+      <td style="font-size:.8rem">${s.isOpen ? '<span style="color:var(--green)">Geöffnet</span>' : '<span style="color:var(--red)">Geschlossen</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('results').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:45%" onclick="sortBy('name')" class="${sortKey==='name'?'sorted':''}">
+              Tankstelle ${arrow('name')}
+            </th>
+            <th onclick="sortBy('price')" class="${sortKey==='price'?'sorted':''}">
+              Preis / Liter ${arrow('price')}
+            </th>
+            <th onclick="sortBy('dist')" class="${sortKey==='dist'?'sorted':''}">
+              Entfernung ${arrow('dist')}
+            </th>
+            <th onclick="sortBy('status')" class="${sortKey==='status'?'sorted':''}">
+              Status ${arrow('status')}
+            </th>
+          </tr>
+        </thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    </div>`;
+
+  // Kartenpins aktualisieren (falls Karte gerade sichtbar)
+  updateMapMarkers();
+}
+
+// ─── Brand Logos ──────────────────────────────────────────────────────────────
+const BRAND_DOMAINS = {
+  'ARAL':           'aral.de',
+  'SHELL':          'shell.de',
+  'BP':             'bp.com',
+  'ESSO':           'esso.de',
+  'TOTAL':          'totalenergies.de',
+  'TOTALENERGIES':  'totalenergies.de',
+  'JET':            'jet.de',
+  'AVIA':           'avia.de',
+  'HEM':            'hem.de',
+  'WESTFALEN':      'westfalen-ag.de',
+  'STAR':           'star-tankstelle.de',
+  'AGIP':           'agip.com',
+  'ENI':            'eni.com',
+  'OIL!':           'oil-tankstelle.de',
+  'SPRINT':         'sprint-kraftstoffe.de',
+  'BFT':            'bft.de',
+  'CALPAM':         'calpam.de',
+  'TAMOIL':         'tamoil.de',
+  'Q8':             'q8.de',
+  'ORLEN':          'orlen.de',
+  'HOYER':          'hoyer.de',
+  'GULF':           'gulf-oil.de',
+  'ALDI':           'aldi.de',
+  'LIDL':           'lidl.de',
+  'REWE':           'rewe.de',
+  'GLOBUS':         'globus.de',
+  'NORDOEL':        'nordoel.de',
+  'RAIFFEISEN':     'raiffeisen.de',
+  'MARKANT':        'markant.eu',
+};
+
+function getBrandDomain(brand) {
+  if (!brand) return null;
+  const upper = brand.toUpperCase().trim();
+  if (BRAND_DOMAINS[upper] !== undefined) return BRAND_DOMAINS[upper];
+  // Teilstring-Suche für zusammengesetzte Namen
+  for (const [key, domain] of Object.entries(BRAND_DOMAINS)) {
+    if (upper.includes(key)) return domain;
+  }
+  return null;
+}
+
+function getBrandLogo(brand, size = 22) {
+  const domain = getBrandDomain(brand);
+  if (domain) {
+    return `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64"
+              style="width:${size}px;height:${size}px;object-fit:contain;border-radius:4px;flex-shrink:0"
+              onerror="this.replaceWith(brandInitial('${esc(brand||'')}',${size}))" />`;
+  }
+  return brandInitialHtml(brand, size);
+}
+
+function brandInitialHtml(brand, size) {
+  const label = (brand||'?').substring(0,2).toUpperCase();
+  const hue   = [...(brand||'')].reduce((h,c) => (h + c.charCodeAt(0)) % 360, 0);
+  return `<span style="display:inline-flex;align-items:center;justify-content:center;
+            width:${size}px;height:${size}px;border-radius:4px;flex-shrink:0;
+            background:hsl(${hue},45%,32%);color:#fff;font-size:${Math.round(size*0.45)}px;font-weight:700">
+            ${label}</span>`;
+}
+
+// Für onerror-Callback (muss global erreichbar sein)
+window.brandInitial = (brand, size) => {
+  const el = document.createElement('span');
+  el.innerHTML = brandInitialHtml(brand, size);
+  return el.firstChild;
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function showStatus(type, msg, spinner=false) {
+  const box = document.getElementById('statusBox');
+  box.className = 'status-box show ' + type;
+  document.getElementById('statusSpinner').style.display = spinner ? 'inline-block' : 'none';
+  document.getElementById('statusText').textContent = msg;
+}
+
+function clearStatus() {
+  document.getElementById('statusBox').className = 'status-box';
+}
+
+function hideResults() {
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('summary').className = 'summary';
+  document.getElementById('tabBar').className = 'tab-bar';
+  document.getElementById('filterBar').className = 'filter-bar';
+  document.getElementById('mapContainer').classList.remove('show');
+  document.getElementById('mapToggle') && (document.getElementById('mapToggle').textContent = '🗺️ Karte anzeigen');
+  document.getElementById('mapToggle') && document.getElementById('mapToggle').classList.remove('active');
+  if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+  mapMarkers = []; mapVisible = false;
+}
+</script>
+</body>
+</html>

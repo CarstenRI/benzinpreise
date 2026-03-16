@@ -1,0 +1,18 @@
+{
+  "name": "Benzinpreise Deutschland",
+  "short_name": "Benzinpreise",
+  "description": "Aktuelle Kraftstoffpreise im Umkreis",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f1117",
+  "theme_color": "#0f1117",
+  "lang": "de",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
