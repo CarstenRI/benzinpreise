@@ -14,6 +14,10 @@
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <!-- Leaflet MarkerCluster -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -130,13 +134,43 @@
 
     .search-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr auto;
+      grid-template-columns: 1fr 1fr auto;
       gap: 14px;
       align-items: end;
     }
 
     @media (max-width: 680px) {
       .search-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* ── Mobile Info (sichtbar nur auf kleinen Screens) ── */
+    .mobile-info { display: none; }
+
+    @media (max-width: 600px) {
+      /* Suchformular: eine Spalte */
+      .search-grid { grid-template-columns: 1fr; }
+      .btn-search  { width: 100%; }
+
+      /* Tab- und Filter-Leiste umbrechen */
+      .tab-bar, .filter-bar { flex-wrap: wrap; }
+
+      /* Tabellen-Spalten ausblenden */
+      .col-dist, .col-status { display: none; }
+
+      /* Dist + Status unter dem Namen einblenden */
+      .mobile-info {
+        display: flex;
+        gap: 10px;
+        font-size: 0.78rem;
+        margin-top: 3px;
+        color: var(--muted);
+      }
+
+      /* Tabelle: Preis-Spalte kompakter */
+      .price-badge { font-size: 0.88rem; padding: 3px 8px; }
+
+      /* Karte etwas niedriger */
+      #map { height: 300px; }
     }
 
     .field label {
@@ -470,15 +504,6 @@
           <span class="range-val" id="radiusVal">10 km</span>
         </div>
       </div>
-      <div class="field">
-        <label>Kraftstoff</label>
-        <select id="fuelSelect">
-          <option value="all">Alle (E5, E10, Diesel)</option>
-          <option value="e5">Super E5</option>
-          <option value="e10">Super E10</option>
-          <option value="diesel">Diesel</option>
-        </select>
-      </div>
       <div>
         <button class="btn-search" id="searchBtn" onclick="search()">🔍 Suchen</button>
       </div>
@@ -499,7 +524,6 @@
 
   <!-- Filter Bar -->
   <div class="filter-bar" id="filterBar">
-    <span class="filter-label">Anzeigen:</span>
     <button class="tab active" id="filterAll"    onclick="setFilter('all')">Alle</button>
     <button class="tab"        id="filterOpen"   onclick="setFilter('open')">✅ Geöffnet</button>
     <button class="tab"        id="filterClosed" onclick="setFilter('closed')">❌ Geschlossen</button>
@@ -534,10 +558,11 @@ let currentFuel = 'e5';
 let sortKey = 'price';
 let sortAsc = true;
 let statusFilter = 'all';  // 'all' | 'open' | 'closed'
-let leafletMap   = null;
-let mapMarkers   = [];
-let markerById   = {};   // station.id → Leaflet-Marker
-let mapVisible   = false;
+let leafletMap    = null;
+let clusterGroup  = null;
+let mapMarkers    = [];
+let markerById    = {};   // station.id → Leaflet-Marker
+let mapVisible    = false;
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
@@ -568,11 +593,18 @@ function updateRadius(v) {
   document.getElementById('radiusVal').textContent = v + ' km';
 }
 
+// ─── Umgebungserkennung (lokal vs. online) ────────────────────────────────────
+const IS_LOCAL = ['localhost','127.0.0.1'].includes(location.hostname);
+const API = {
+  nominatim:    IS_LOCAL ? '/proxy/nominatim'    : 'https://nominatim.openstreetmap.org/search',
+  tankerkoenig: IS_LOCAL ? '/proxy/tankerkoenig' : 'https://creativecommons.tankerkoenig.de/json/list.php',
+};
+
 // ─── Geocode PLZ → {lat, lng} via Nominatim ──────────────────────────────────
 async function geocodePLZ(plz) {
   const params = `postalcode=${encodeURIComponent(plz)}&country=DE&format=json&limit=1`;
-  const url = `https://nominatim.openstreetmap.org/search?${params}`;
-  const res  = await fetch(url);
+  const url = `${API.nominatim}?${params}`;
+  const res  = await fetch(url, IS_LOCAL ? {} : { headers: { 'Accept-Language': 'de' } });
   const data = await res.json();
   if (!data.length) throw new Error(`Keine Koordinaten für PLZ ${plz} gefunden.`);
   return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), name: data[0].display_name };
@@ -581,7 +613,7 @@ async function geocodePLZ(plz) {
 // ─── Tankerkönig API ──────────────────────────────────────────────────────────
 async function fetchPrices(lat, lng, rad, type) {
   const sort = type === 'all' ? 'dist' : 'price';
-  const url = `https://creativecommons.tankerkoenig.de/json/list.php` +
+  const url = `${API.tankerkoenig}` +
     `?lat=${lat}&lng=${lng}&rad=${rad}&sort=${sort}&type=${type}&apikey=${apiKey}`;
   const res  = await fetch(url);
   const data = await res.json();
@@ -603,7 +635,7 @@ async function search() {
   }
 
   const rad  = parseInt(document.getElementById('radiusSlider').value);
-  const type = document.getElementById('fuelSelect').value;
+  const type = 'all';
 
   document.getElementById('searchBtn').disabled = true;
   showStatus('loading', `Suche Tankstellen im Umkreis von ${rad} km um PLZ ${plz}…`, true);
@@ -636,9 +668,7 @@ async function search() {
 // ─── Render Tabs ──────────────────────────────────────────────────────────────
 function renderTabs(type) {
   const bar   = document.getElementById('tabBar');
-  const fuels = type === 'all'
-    ? [['e5','Super E5'],['e10','Super E10'],['diesel','Diesel']]
-    : [[type, type === 'e5' ? 'Super E5' : type === 'e10' ? 'Super E10' : 'Diesel']];
+  const fuels = [['e5','Super E5'],['e10','Super E10'],['diesel','Diesel']];
 
   currentFuel = fuels[0][0];
   bar.innerHTML = fuels.map(([k,l]) =>
@@ -730,7 +760,7 @@ function toggleMap() {
 function updateMapMarkers() {
   if (!leafletMap || !mapVisible) return;
 
-  mapMarkers.forEach(m => leafletMap.removeLayer(m));
+  if (clusterGroup) { leafletMap.removeLayer(clusterGroup); clusterGroup = null; }
   mapMarkers = [];
   markerById = {};
 
@@ -746,6 +776,30 @@ function updateMapMarkers() {
   const range = max - min || 0.01;
   const bounds = [];
 
+  // Cluster-Gruppe mit eigenem Icon (zeigt günstigsten Preis der Gruppe)
+  clusterGroup = L.markerClusterGroup({
+    maxClusterRadius: 55,
+    iconCreateFunction(cluster) {
+      const children  = cluster.getAllChildMarkers();
+      const minPrice  = Math.min(...children.map(m => m.options._price || 999));
+      const pct       = (minPrice - min) / range;
+      const col       = pct < 0.25 ? '#22c55e' : pct > 0.75 ? '#ef4444' : '#f59e0b';
+      const cnt       = cluster.getChildCount();
+      return L.divIcon({
+        className: '',
+        html: `<div style="background:${col};color:#fff;border-radius:8px;
+                 padding:5px 10px;font-size:13px;font-weight:800;white-space:nowrap;
+                 box-shadow:0 2px 8px rgba(0,0,0,.55),0 0 0 2px #fff;
+                 text-shadow:0 1px 2px rgba(0,0,0,.4)">
+                 ab ${minPrice.toFixed(3).replace('.',',')} €
+                 <span style="font-size:10px;opacity:.75;margin-left:2px">(${cnt})</span>
+               </div>`,
+        iconSize: null,
+        iconAnchor: [0, 12]
+      });
+    }
+  });
+
   filtered.forEach(s => {
     if (!s.lat || !s.lng) return;
 
@@ -755,13 +809,24 @@ function updateMapMarkers() {
     const gMaps = `https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lng}`;
     const oMaps = `https://www.openstreetmap.org/?mlat=${s.lat}&mlon=${s.lng}&zoom=16`;
 
+    const label = s._price.toFixed(3).replace('.',',') + ' €';
     const icon = L.divIcon({
       className: '',
-      html: `<div style="background:${color};color:#fff;border-radius:6px;padding:3px 8px;
-               font-size:11px;font-weight:700;white-space:nowrap;
-               box-shadow:0 2px 6px rgba(0,0,0,.45);border:1.5px solid rgba(255,255,255,.3)">
-               ${s._price.toFixed(3).replace('.',',')}€</div>`,
-      iconAnchor: [0, 10]
+      html: `<div style="
+               background:${color};
+               color:#fff;
+               border-radius:8px;
+               padding:5px 10px;
+               font-size:13px;
+               font-weight:800;
+               white-space:nowrap;
+               letter-spacing:0.02em;
+               box-shadow:0 2px 8px rgba(0,0,0,.55), 0 0 0 2px #fff;
+               text-shadow:0 1px 2px rgba(0,0,0,.4);
+               line-height:1.2;
+               ">${label}</div>`,
+      iconSize: null,
+      iconAnchor: [0, 12]
     });
 
     const fuelLabels = { e5: 'Super E5', e10: 'Super E10', diesel: 'Diesel' };
@@ -802,14 +867,15 @@ function updateMapMarkers() {
         </div>
       </div>`;
 
-    const marker = L.marker([s.lat, s.lng], { icon })
-      .bindPopup(popup)
-      .addTo(leafletMap);
+    const marker = L.marker([s.lat, s.lng], { icon, _price: s._price })
+      .bindPopup(popup);
+    clusterGroup.addLayer(marker);
     mapMarkers.push(marker);
     if (s.id) markerById[s.id] = marker;
     bounds.push([s.lat, s.lng]);
   });
 
+  leafletMap.addLayer(clusterGroup);
   if (bounds.length) leafletMap.fitBounds(bounds, { padding: [40, 40] });
 }
 
@@ -822,10 +888,8 @@ function showOnMap(stationId) {
     const marker = markerById[stationId];
     if (!marker) return;
     leafletMap.invalidateSize();
-    leafletMap.flyTo(marker.getLatLng(), 15, { duration: 0.8 });
-    marker.openPopup();
-    // Karte ins Sichtfeld scrollen
     document.getElementById('mapContainer').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    clusterGroup.zoomToShowLayer(marker, () => marker.openPopup());
   }, mapVisible ? 0 : 400);
 }
 
@@ -888,12 +952,16 @@ function renderSortedTable() {
           <div>
             <div><span class="open-dot ${s.isOpen?'open':'closed'}"></span><span class="station-name" onclick="showOnMap('${s.id}')" title="Auf Karte anzeigen" style="cursor:pointer;text-decoration-line:underline;text-decoration-style:dotted;text-underline-offset:3px">${esc(s.brand||s.name||'–')}</span></div>
             <div class="station-addr">${esc(s.name !== s.brand ? s.name||'' : '')} ${esc(addr)}</div>
+            <div class="mobile-info">
+              <span>${dist}</span>
+              <span style="color:${s.isOpen?'var(--green)':'var(--red)'}">${s.isOpen?'Geöffnet':'Geschlossen'}</span>
+            </div>
           </div>
         </div>
       </td>
       <td><span class="price-badge ${cls}">${priceStr}</span></td>
-      <td class="dist-val">${dist}</td>
-      <td style="font-size:.8rem">${s.isOpen ? '<span style="color:var(--green)">Geöffnet</span>' : '<span style="color:var(--red)">Geschlossen</span>'}</td>
+      <td class="dist-val col-dist">${dist}</td>
+      <td class="col-status" style="font-size:.8rem">${s.isOpen ? '<span style="color:var(--green)">Geöffnet</span>' : '<span style="color:var(--red)">Geschlossen</span>'}</td>
     </tr>`;
   }).join('');
 
@@ -908,10 +976,10 @@ function renderSortedTable() {
             <th onclick="sortBy('price')" class="${sortKey==='price'?'sorted':''}">
               Preis / Liter ${arrow('price')}
             </th>
-            <th onclick="sortBy('dist')" class="${sortKey==='dist'?'sorted':''}">
+            <th class="col-dist" onclick="sortBy('dist')" class="${sortKey==='dist'?'sorted':''}">
               Entfernung ${arrow('dist')}
             </th>
-            <th onclick="sortBy('status')" class="${sortKey==='status'?'sorted':''}">
+            <th class="col-status" onclick="sortBy('status')" class="${sortKey==='status'?'sorted':''}">
               Status ${arrow('status')}
             </th>
           </tr>
@@ -1022,8 +1090,9 @@ function hideResults() {
   document.getElementById('mapContainer').classList.remove('show');
   document.getElementById('mapToggle') && (document.getElementById('mapToggle').textContent = '🗺️ Karte anzeigen');
   document.getElementById('mapToggle') && document.getElementById('mapToggle').classList.remove('active');
+  if (clusterGroup) { clusterGroup = null; }
   if (leafletMap) { leafletMap.remove(); leafletMap = null; }
-  mapMarkers = []; mapVisible = false;
+  mapMarkers = []; markerById = {}; mapVisible = false;
 }
 </script>
 </body>
