@@ -293,6 +293,13 @@
 
     .summary-pill strong { color: var(--text); }
 
+    .summary-pill.clickable {
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .summary-pill.clickable:hover { border-color: var(--accent); background: #1e3048; }
+    .summary-pill.active-filter   { border-color: var(--accent) !important; background: #162940 !important; font-weight: 600; }
+
     /* ── Fuel Tab Bar & Filter Bar ──────────────────────── */
     .tab-bar, .filter-bar {
       display: none;
@@ -692,10 +699,12 @@ function renderSummary(stations, plz, rad, geo) {
   document.getElementById('summary').innerHTML =
     `<div class="summary-pill">📍 <strong>${loc}</strong></div>
      <div class="summary-pill">🔍 Umkreis <strong>${rad} km</strong></div>
-     <div class="summary-pill">⛽ <strong>${stations.length}</strong> Tankstellen</div>
-     <div class="summary-pill" style="color:var(--green)">✅ <strong>${open}</strong> geöffnet</div>
-     ${closed ? `<div class="summary-pill" style="color:var(--red)">❌ <strong>${closed}</strong> geschlossen</div>` : ''}`;
+     <div class="summary-pill">⛽ <strong>${stations.length}</strong> Tankstellen</div>`;
   document.getElementById('summary').classList.add('show');
+
+  // Zähler in Filter-Buttons einsetzen
+  document.getElementById('filterOpen').textContent   = `✅ ${open} Geöffnet`;
+  document.getElementById('filterClosed').textContent = `❌ ${closed} Geschlossen`;
 }
 
 // ─── Render Table ─────────────────────────────────────────────────────────────
